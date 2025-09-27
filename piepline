@@ -1,0 +1,71 @@
+pipeline {
+    agent any
+    tools {
+        jdk 'jdk'
+        nodejs 'nodejs'
+    }
+    environment {
+        scanner = tool 'SonarQube'
+    }
+    stages {
+        stage('cleanws') {
+            steps {
+                cleanWs()
+            }
+        }
+        stage('Code') {
+            steps {
+                git "https://github.com/devops0014/Zomato-Project.git"
+            }
+        }
+        stage('QualityCheck') {
+            steps {
+                withSonarQubeEnv('SonarQube') {
+                    sh """$scanner/bin/sonar-scanner \
+                    -Dsonar.projectName=zomato \
+                    -Dsonar.projectKey=zomato"""
+                }
+            }
+        }
+        stage('Build') {
+            steps {
+                sh "npm install"
+            }
+        }
+        stage('OWASP') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./ --disableYarnAudit --disableNodeAudit', odcInstallation: 'dpcheck'
+                //dependencyCheckPublisher pattern: 'dependency-check-report/dependency-check-report.xml'
+            }
+        }
+        stage('ImageGeneration') {
+            steps{
+                sh 'docker build -t saivarma999/zomatoproject:zmp .'
+            }
+        }
+        stage('TrivyFS') {
+            steps{
+                sh 'trivy fs . > trivy_fs.txt'
+            }
+        }
+        stage('ImageScan') {
+            steps {
+                sh 'trivy image saivarma999/zomatoproject:zmp'
+            }
+        }
+        stage('DockerHub') {
+            steps {
+                script {
+                    withDockerRegistry(credentialsId: 'hubpass') {
+                        sh 'docker push saivarma999/zomatoproject:zmp'
+                    }
+                }
+            }
+        }
+        stage('Container') {
+            steps {
+                sh 'docker run -itd --name zomcont -p 3000:3000 saivarma999/zomatoproject:zmp'
+            }
+        }
+    }
+}
